@@ -113,3 +113,15 @@ external_network:
           addr: "127.0.0.1"
 
 networks: "{{ provisioning_network + external_network + (extra_networks | default([])) if not lookup('env', 'BOND_PRIMARY_INTERFACE') else provisioning_network + external_network + external_network + (extra_networks | default([])) }}"
+
+# NOTE(bnemec): This is untested. It will likely require metal3-dev-env changes.
+node_mac_map:
+  ostest_master_0:
+    ostestbm: "30:d0:42:56:66:af"
+    ostestpr: "00:60:41:2e:87:32"
+  ostest_master_1:
+    ostestbm: "30:d0:42:56:66:bc"
+    ostestpr: "00:60:41:2e:87:36"
+  ostest_master_2:
+    ostestbm: "30:d0:42:56:66:c9"
+    ostestpr: "00:60:41:2e:87:3a"
