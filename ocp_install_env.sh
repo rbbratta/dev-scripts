@@ -191,6 +191,7 @@ function loadbalancer_type() {
 cat <<EOF
     loadBalancer:
       type: UserManaged
+    dnsRecordsType: External
 EOF
     fi
 }
