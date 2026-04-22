@@ -357,7 +357,7 @@ EOF
         continue
       fi
       declare -l redfish_verify_ca=$(node_val ${idx} "driver_info.redfish_verify_ca")
-      certificate_verification=$(["${redfish_verify_ca}" == "true" ] && echo -n "Enabled" || echo -n "Disabled")
+      certificate_verification=$([[ "${redfish_verify_ca}" == "true" ]] && echo -n "Enabled" || echo -n "Disabled")
       cat <<EOF
       certificateVerification: ${certificate_verification}
 EOF
