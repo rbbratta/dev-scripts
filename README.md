@@ -165,6 +165,59 @@ export IGNITION_EXTRA=extra.ign
 export ASSETS_EXTRA_FOLDER=local_file_path
 ```
 
+### BMC TLS trust (`bmcVerifyCA`) on OCP 4.22+
+
+IPI installs on **OpenShift 4.22+** verify TLS against Redfish BMC endpoints when your inventory uses HTTPS-style URLs (`idrac-redfish://...`, `redfish://...`, etc.). The installer consumes PEM trust material at `${WORKING_DIR}/virtualbmc/sushy-tools/cert.pem`.
+
+After sourcing your `config_$USER.sh` (so `WORKING_DIR`, `NODES_FILE`, `EXTRA_NODES_FILE`, and `ARM_NODES_FILE` match what `05_create_install_config.sh` will use):
+
+```bash
+make fetch_bmc_certs
+# equivalent: ./fetch_bmc_certs.sh   (loads config_${USER}.sh / CONFIG like other steps)
+```
+
+`05_create_install_config.sh` runs an early **preflight** when HTTPS BMC addresses are detected and the PEM bundle is still empty.
+
+Override environment variables documented in [`config_example.sh`](config_example.sh):
+
+- `BMC_CA_OVERRIDE`
+- `SKIP_BMC_VERIFY_CA_CHECK` (omits `bmcVerifyCA`; dangerous for private BMC CAs)
+
+HTTP-only URLs (`*+http://*` in the BMC scheme), IPMI transports, etc. skip this workflow; run `./fetch_bmc_certs.sh --dry-run` for a concise report.
+
+### Operational Redfish verification
+
+`check_bmcs.sh` / `check_idrac.sh` are intentionally shallow liveness checks (`/redfish/v1/` reachability).
+For a proper pre-install operational check aligned with the installer/BMO path, use:
+
+```bash
+./verify_redfish_bmcs.sh
+```
+
+Like `./fetch_bmc_certs.sh`, this script **sources `common.sh`** when a dev-scripts config is discoverable (`CONFIG`, `config_$USER.sh`, or `$XDG_CONFIG_HOME/dev-scripts/config`), so `WORKING_DIR`, `NODES_FILE`, merge lists, and `BMC_CA_OVERRIDE` match other steps. Pass **`--no-config`** to skip that and rely on explicit paths / environment only (for example in minimal CI fixtures).
+
+Default behavior is read-only and inventory-driven:
+
+- merges inventories the same way as `fetch_bmc_certs` (`NODES_FILE`, optional `EXTRA_NODES_FILE` / `ARM_NODES_FILE`, `--extra-inventory`)
+- rejects invalid inventory JSON or a missing top-level `.nodes` array
+- treats **Redfish-capable** addresses (including `*+http://*` virtual media URLs) separately from **TLS PEM collection** (which remains HTTPS-only; see `tls-pem-fetch` in script output)
+- resolves the configured BMC hostname from each `driver_info.address`
+- shows DNS resolution from the machine running the script (non-IPv6-literal hostnames)
+- prints TLS peer summary for HTTPS endpoints only
+- performs authenticated `GET /redfish/v1/`
+- queries the exact configured System URI (for example `/redfish/v1/Systems/System.Embedded.1`)
+- extracts and prints `PowerState`
+
+Exit status is **non-zero** if every matched node is skipped as non-Redfish (for example an IPMI-only inventory) unless you pass **`--allow-all-skipped`**. A run that performs **no substantive Redfish checks** is not reported as a full success by default.
+
+Optional destructive actions are explicit and guarded: you must pass **`--yes-i-understand`**, and **`--node`** is required unless **`--allow-bulk-destructive`** is set (intended only when you mean to hit every listed node).
+
+```bash
+./verify_redfish_bmcs.sh --node master-0 --action force-restart --yes-i-understand
+```
+
+Use `--dry-run` to inspect how inventory URLs, DNS, TLS modes, and PEM-fetch classification are interpreted without sending API calls.
+
 ## Installation
 
 Consider using `tmux`, `screen` or `nohup` as the installation takes around 1 hour.

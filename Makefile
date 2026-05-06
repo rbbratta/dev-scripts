@@ -1,4 +1,4 @@
-.PHONY: default all agent agent_cleanup agent_build_installer agent_configure agent_create_cluster requirements configure ironic ocp_run install_config clean ocp_cleanup ironic_cleanup host_cleanup cache_cleanup registry_cleanup proxy_cleanup workingdir_cleanup podman_cleanup bell
+.PHONY: default all agent agent_cleanup agent_build_installer agent_configure agent_create_cluster requirements configure ironic ocp_run fetch_bmc_certs install_config clean ocp_cleanup ironic_cleanup host_cleanup cache_cleanup registry_cleanup proxy_cleanup workingdir_cleanup podman_cleanup bell
 default: requirements configure build_installer ironic install_config ocp_run bell
 
 all: default
@@ -62,6 +62,11 @@ ironic:
 
 install_config:
 	./05_create_install_config.sh
+
+# Fetch BMC TLS chains into ${WORKING_DIR}/virtualbmc/sushy-tools/cert.pem for OCP 4.22+ HTTPS Redfish installs.
+# Uses fetch_bmc_certs.sh so config_${USER}.sh / CONFIG is loaded (same as other dev-scripts steps).
+fetch_bmc_certs:
+	./fetch_bmc_certs.sh
 
 ocp_run:
 	./06_create_cluster.sh

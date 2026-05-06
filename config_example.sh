@@ -474,6 +474,21 @@ set -x
 #
 #export NODES_FILE="/root/git/dev-scripts/bm.json"
 
+# BMC_CA_OVERRIDE / SKIP_BMC_VERIFY_CA_CHECK (baremetal IPI 4.22+ HTTPS Redfish)
+# When inventories use HTTPS Redfish/iDRAC addresses, openshift-install expects
+# platform.baremetal.bmcVerifyCA. By default dev-scripts reads:
+#   ${WORKING_DIR}/virtualbmc/sushy-tools/cert.pem
+# Populate it with:  make fetch_bmc_certs
+# Operational path check (authenticated Redfish + system URI + power state):
+#   ./verify_redfish_bmcs.sh
+# Uses common.sh when a config is discoverable (same idea as fetch_bmc_certs.sh).
+#   --no-config           Skip common.sh (fixtures / explicit paths only).
+#   --allow-all-skipped   Exit 0 if every node is non-Redfish (e.g. IPMI-only list).
+# Destructive --action requires --yes-i-understand and per-node --node unless
+#   --allow-bulk-destructive is set.
+# BMC_CA_OVERRIDE=/path/to/ca-bundle.pem
+# SKIP_BMC_VERIFY_CA_CHECK=1   # omits bmcVerifyCA entirely (dangerous)
+
 # NODES_PLATFORM -
 # Whether the installation is on baremetal or not
 # Default is unset.

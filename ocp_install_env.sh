@@ -2,6 +2,60 @@ source release_info.sh
 
 eval "$(go env)"
 
+_DEV_SCRIPTS_FETCH_BMC="$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)"
+# shellcheck disable=SC1091
+source "${_DEV_SCRIPTS_FETCH_BMC}/fetch_bmc_certs.inc.sh"
+
+# Indent PEM file for install-config YAML; avoid sudo when readable.
+function indent_install_config_pem() {
+  local pem="$1"
+  if [[ -r "${pem}" ]]; then
+    sed 's/^/      /' "${pem}"
+  else
+    sudo sed 's/^/      /' "${pem}"
+  fi
+}
+
+# Early fail in 05_create_install_config.sh when HTTPS BMCs need trust material.
+function preflight_bmc_tls_ca_bundle() {
+  if is_lower_version "$(openshift_version $OCP_DIR)" "4.22"; then
+    return 0
+  fi
+  local out NEED=0 cafile
+  if ! out=$(fetch_bmc_certs_invoke_print_needs_tls_for_ocp); then
+    echo "ERROR: BMC inventory TLS check failed (fetch_bmc_certs.inc.sh):" >&2
+    echo "${out}" >&2
+    return 1
+  fi
+  [[ "${out}" == "yes" ]] && NEED=1
+  if [[ "${NEED}" -eq 0 ]]; then
+    return 0
+  fi
+  cafile="${WORKING_DIR}/virtualbmc/sushy-tools/cert.pem"
+  if [[ -n "${BMC_CA_OVERRIDE:-}" ]]; then
+    cafile="${BMC_CA_OVERRIDE}"
+  fi
+  if [[ -s "${cafile}" ]] || [[ -n "${SKIP_BMC_VERIFY_CA_CHECK:-}" ]]; then
+    return 0
+  fi
+  {
+    echo "ERROR: OCP $(openshift_version $OCP_DIR) with HTTPS BMC inventory needs a non-empty BMC CA bundle at:"
+    echo "  ${cafile}"
+    echo "Right now that file is missing or zero bytes."
+    echo ""
+    echo "Populate it before install_config (the Makefile install_config target runs this step)."
+    echo "  make fetch_bmc_certs"
+    echo "That loads your dev-scripts config (e.g. config_${USER}.sh) and writes cert.pem under WORKING_DIR."
+    echo ""
+    echo "If fetch fails with permission denied under ${WORKING_DIR}:"
+    printf '  sudo mkdir -p "%s/virtualbmc/sushy-tools" && sudo chown -R "$USER" "%s/virtualbmc"\n' "${WORKING_DIR}" "${WORKING_DIR}"
+    echo "or set WORKING_DIR in your config to a directory you own, then run make fetch_bmc_certs again."
+    echo ""
+    echo "Alternatives: BMC_CA_OVERRIDE=/path/to/bundle.pem   or   SKIP_BMC_VERIFY_CA_CHECK=1 (unsafe for private BMC CAs)."
+  } >&2
+  return 1
+}
+
 function get_arch() {
     ARCH=$(uname -m)
     if [[ $ARCH == "aarch64" ]]; then
@@ -442,10 +496,63 @@ EOF
   fi
 
   if ! is_lower_version "$(openshift_version $OCP_DIR)" "4.22"; then
+    NEED_TLS_BMC_CA=0
+    TLS_CHECK_OUT=""
+    if ! TLS_CHECK_OUT=$(fetch_bmc_certs_invoke_print_needs_tls_for_ocp); then
+      echo "ERROR: could not classify BMC URLs for TLS (fetch_bmc_certs_invoke_print_needs_tls_for_ocp):" >&2
+      echo "${TLS_CHECK_OUT}" >&2
+      exit 1
+    fi
+    if [[ "${TLS_CHECK_OUT}" == "yes" ]]; then
+      NEED_TLS_BMC_CA=1
+    elif [[ "${TLS_CHECK_OUT}" != "no" ]]; then
+      echo "ERROR: unexpected output from fetch_bmc_certs inventory check: ${TLS_CHECK_OUT}" >&2
+      exit 1
+    fi
+
+    BMC_CA_FILE="${WORKING_DIR}/virtualbmc/sushy-tools/cert.pem"
+    if [[ -n "${BMC_CA_OVERRIDE:-}" ]]; then
+      if [[ ! -s "${BMC_CA_OVERRIDE}" ]]; then
+        echo "ERROR: BMC_CA_OVERRIDE points to missing or empty file: ${BMC_CA_OVERRIDE}" >&2
+        exit 1
+      fi
+      BMC_CA_FILE="${BMC_CA_OVERRIDE}"
+    fi
+
+    if [[ "${NEED_TLS_BMC_CA}" -eq 1 ]]; then
+      if [[ -s "${BMC_CA_FILE}" ]]; then
     cat >> "${outdir}/install-config.yaml" << EOF
     bmcVerifyCA: |
-$(sudo sed 's/^/      /' "${WORKING_DIR}/virtualbmc/sushy-tools/cert.pem")
+$(indent_install_config_pem "${BMC_CA_FILE}")
 EOF
+      elif [[ -z "${SKIP_BMC_VERIFY_CA_CHECK:-}" ]]; then
+cat <<BADBLOCK >&2
+ERROR: BMC CA bundle missing or empty: ${BMC_CA_FILE}
+OpenShift bare metal IPI on OCP >= 4.22 verifies TLS to HTTPS Redfish/BMC endpoints
+when your inventories use those URLs (e.g. idrac-redfish).
+
+Populate the default sushy-tools bundle (respects WORKING_DIR, NODES_FILE,
+EXTRA_NODES_FILE, ARM_NODES_FILE):
+
+  make fetch_bmc_certs
+
+or:
+
+  ./fetch_bmc_certs.sh
+
+Or pass an existing PEM bundle:
+
+  BMC_CA_OVERRIDE=/path/to/bmc-bundle.pem
+
+Escape hatch (omits bmcVerifyCA; unsafe for self-signed BMC HTTPS):
+
+  SKIP_BMC_VERIFY_CA_CHECK=1
+BADBLOCK
+        exit 1
+      else
+        echo "WARNING: Skipping baremetal.bmcVerifyCA (empty/missing ${BMC_CA_FILE}) because SKIP_BMC_VERIFY_CA_CHECK is set but inventory uses HTTPS BMC URLs." >&2
+      fi
+    fi
   fi
 
     cat >> "${outdir}/install-config.yaml" << EOF
