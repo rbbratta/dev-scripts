@@ -167,7 +167,7 @@ export ASSETS_EXTRA_FOLDER=local_file_path
 
 ### BMC TLS trust (`bmcVerifyCA`) on OCP 4.22+
 
-IPI installs on **OpenShift 4.22+** verify TLS against Redfish BMC endpoints when your inventory uses HTTPS-style URLs (`idrac-redfish://...`, `redfish://...`, etc.). The installer consumes PEM trust material at `${WORKING_DIR}/virtualbmc/sushy-tools/cert.pem`.
+IPI installs on **OpenShift 4.22+** may need TLS trust against Redfish BMC endpoints when your inventory uses HTTPS-style URLs (`idrac-redfish://...`, `redfish://...`, etc.) **and** keeps `driver_info.redfish_verify_ca` enabled. The installer consumes PEM trust material at `${WORKING_DIR}/virtualbmc/sushy-tools/cert.pem`.
 
 After sourcing your `config_$USER.sh` (so `WORKING_DIR`, `NODES_FILE`, `EXTRA_NODES_FILE`, and `ARM_NODES_FILE` match what `05_create_install_config.sh` will use):
 
@@ -176,14 +176,14 @@ make fetch_bmc_certs
 # equivalent: ./fetch_bmc_certs.sh   (loads config_${USER}.sh / CONFIG like other steps)
 ```
 
-`05_create_install_config.sh` runs an early **preflight** when HTTPS BMC addresses are detected and the PEM bundle is still empty.
+`05_create_install_config.sh` runs an early **preflight** only when HTTPS BMC addresses are detected **and** at least one of them still verifies certificates (`redfish_verify_ca` is not `false`).
 
 Override environment variables documented in [`config_example.sh`](config_example.sh):
 
 - `BMC_CA_OVERRIDE`
 - `SKIP_BMC_VERIFY_CA_CHECK` (omits `bmcVerifyCA`; dangerous for private BMC CAs)
 
-HTTP-only URLs (`*+http://*` in the BMC scheme), IPMI transports, etc. skip this workflow; run `./fetch_bmc_certs.sh --dry-run` for a concise report.
+HTTP-only URLs (`*+http://*` in the BMC scheme), IPMI transports, or HTTPS entries with `redfish_verify_ca=false` skip this requirement; run `./fetch_bmc_certs.sh --print-needs-tls -q` to confirm whether install-config will require `bmcVerifyCA`.
 
 ### Operational Redfish verification
 

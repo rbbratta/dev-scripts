@@ -39,7 +39,8 @@ function preflight_bmc_tls_ca_bundle() {
     return 0
   fi
   {
-    echo "ERROR: OCP $(openshift_version $OCP_DIR) with HTTPS BMC inventory needs a non-empty BMC CA bundle at:"
+    echo "ERROR: OCP $(openshift_version $OCP_DIR) with HTTPS BMC inventory that keeps certificate verification enabled"
+    echo "needs a non-empty BMC CA bundle at:"
     echo "  ${cafile}"
     echo "Right now that file is missing or zero bytes."
     echo ""
@@ -51,6 +52,7 @@ function preflight_bmc_tls_ca_bundle() {
     printf '  sudo mkdir -p "%s/virtualbmc/sushy-tools" && sudo chown -R "$USER" "%s/virtualbmc"\n' "${WORKING_DIR}" "${WORKING_DIR}"
     echo "or set WORKING_DIR in your config to a directory you own, then run make fetch_bmc_certs again."
     echo ""
+    echo "If your inventory sets driver_info.redfish_verify_ca=false, install-config should not require this bundle."
     echo "Alternatives: BMC_CA_OVERRIDE=/path/to/bundle.pem   or   SKIP_BMC_VERIFY_CA_CHECK=1 (unsafe for private BMC CAs)."
   } >&2
   return 1
@@ -529,7 +531,7 @@ EOF
 cat <<BADBLOCK >&2
 ERROR: BMC CA bundle missing or empty: ${BMC_CA_FILE}
 OpenShift bare metal IPI on OCP >= 4.22 verifies TLS to HTTPS Redfish/BMC endpoints
-when your inventories use those URLs (e.g. idrac-redfish).
+when your inventories use those URLs and keep redfish_verify_ca enabled.
 
 Populate the default sushy-tools bundle (respects WORKING_DIR, NODES_FILE,
 EXTRA_NODES_FILE, ARM_NODES_FILE):
@@ -598,13 +600,11 @@ function generate_ocp_host_manifest() {
 
         encoded_username=$(echo -n "$username" | base64)
         encoded_password=$(echo -n "$password" | base64)
-        if is_lower_version "$(openshift_version $OCP_DIR)" "4.22"; then
-          # Heads up, "verify_ca" in ironic driver config, and "disableCertificateVerification" in BMH have opposite meaning
-          # Handle both boolean false and string "False" - jq outputs boolean false as lowercase "false"
-          disableCertificateVerification=$([[ "${verify_ca,,}" = "false" ]] && echo "true" || echo "false")
-        else
-          disableCertificateVerification=false
-        fi
+        # Heads up, "verify_ca" in ironic driver config, and
+        # "disableCertificateVerification" in BMH have opposite meaning.
+        # Keep honoring redfish_verify_ca on all supported versions because some
+        # real BMC certs do not have SANs matching the configured hostname.
+        disableCertificateVerification=$([[ "${verify_ca,,}" = "false" ]] && echo "true" || echo "false")
 
         secret="---
 apiVersion: v1
