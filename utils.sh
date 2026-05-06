@@ -275,13 +275,9 @@ function node_map_to_install_config_hosts() {
 EOF
 
       if [[ "$driver_prefix" == "redfish" ]]; then
-          # Set disableCertificateVerification on older versions
-          # Heads up, "verify ca" in ironic driver config, and "disableCertificateVerification" in BMH have opposite meaning
-          verify_ca=$(node_val ${idx} "driver_info.redfish_verify_ca")
-          # Handle both boolean false and string "False" - jq outputs boolean false as lowercase "false"
-          disable_certificate_verification=$([[ "${verify_ca,,}" = "false" ]] && echo "true" || echo "false")
+          # Lab: do not verify BMC TLS (common SAN mismatch on iDRAC, etc.).
           cat << EOF
-          disableCertificateVerification: ${disable_certificate_verification}
+          disableCertificateVerification: true
 EOF
       fi
 

@@ -12,8 +12,6 @@ source validation.sh
 
 early_deploy_validation
 
-preflight_bmc_tls_ca_bundle || exit 1
-
 set_api_and_ingress_vip
 
 if [ ! -f ${OCP_DIR}/install-config.yaml ]; then
